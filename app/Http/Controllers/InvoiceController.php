@@ -23,7 +23,7 @@ class InvoiceController extends Controller
 
     public function indexOutgoing(Request $request)
     {
-        $threeMonthsAgo = now()->subMonths(3)->format('Y-m-d');
+        $threeMonthsAgo = now()->subMonths(1)->format('Y-m-d');
     
         // OUT
         $outQuery = DB::connection('sqlsrv')->table('zt_invoices_out')
@@ -121,7 +121,7 @@ class InvoiceController extends Controller
      * Veriler son 3 ayı kapsar.
      */
     public function indexIncoming(Request $request){
-    $threeMonthsAgo = now()->subMonths(3)->format('Y-m-d');
+    $threeMonthsAgo = now()->subMonths(1)->format('Y-m-d');
 
         $query = DB::connection('sqlsrv')->table('zt_invoices_in as n')
             ->leftJoin('trInvoiceHeader as k', function ($join) {
@@ -188,25 +188,27 @@ class InvoiceController extends Controller
             $results = [];
 
             Log::info('Starting multi-account sync process');
+
             
             Log::info('Starting outgoing invoices sync');
             $results['outgoing'] = $this->invoiceService->syncOutgoingInvoices();
             Log::info('Outgoing invoices result: ', $results['outgoing']);
 
-            Log::info('Starting archive invoices sync');
-            $results['archive'] = $this->invoiceService->syncArchiveInvoices();
-            Log::info('Archive invoices result: ', $results['archive']);
             
             Log::info('Starting incoming invoices sync');
             $results['incoming'] = $this->invoiceService->syncIncomingInvoices();
             Log::info('Incoming invoices result: ', $results['incoming']);
 
-            // Toplam istatistikleri hesapla
+            Log::info('Starting archive invoices sync');
+            $results['archive'] = $this->invoiceService->syncArchiveInvoices();
+            Log::info('Archive invoices result: ', $results['archive']);
+
+
             $totalSaved = $results['outgoing']['saved'] + $results['incoming']['saved'] + $results['archive']['saved'];
             $totalUpdated = $results['outgoing']['updated'] + $results['incoming']['updated'] + $results['archive']['updated'];
             $totalCredentials = $results['outgoing']['credential_count'] ?? 0;
 
-            // Hataları topla
+
             $allErrors = [];
             foreach ($results as $type => $result) {
                 if (!empty($result['errors'])) {
