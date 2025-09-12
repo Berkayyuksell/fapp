@@ -8,44 +8,55 @@ use Illuminate\Support\Facades\DB;
 class EFaturaAuthService
 {
     private $wsdlUrl;
-    private $username;
-    private $password;
+    private $credentials;
 
     public function __construct()
     {
         $this->wsdlUrl = config('efatura.auth_wsdl', 'https://api.doganedonusum.com/AuthenticationWS?wsdl');
-
-        $results = DB::select("
-        SELECT UserName, Password 
-        FROM EInvoiceWebService('TR') 
-        WHERE EInvoiceWebServiceCode = :code
-    ", ['code' => 'Dogan']);
-
-// Sonuçları değişkenlere atama
-    if (!empty($results)) {
-        $username = $results[0]->UserName;
-        $password = $results[0]->Password;
-        $passwordDecoded = base64_decode($password);
-    }
-
-
-
-
-
-
-        $this->username = trim((string) ($username));
-        $this->password = trim((string) ($passwordDecoded ));
+        $this->loadCredentials();
     }
 
     /**
-     * E-Fatura sistemine login olur ve session ID döndürür
+     * Tüm credentials'ları yükler
      */
-    public function login(): string
+    private function loadCredentials(): void
     {
-        if (empty($this->username) || empty($this->password)) {
+        $results = DB::select("
+            SELECT UserName, Password 
+            FROM EInvoiceWebService('TR') 
+            WHERE EInvoiceWebServiceCode = :code
+        ", ['code' => 'Dogan']);
+
+        $this->credentials = [];
+        
+        if (!empty($results)) {
+            foreach ($results as $result) {
+                $this->credentials[] = [
+                    'username' => trim((string) $result->UserName),
+                    'password' => trim((string) base64_decode($result->Password))
+                ];
+            }
+        }
+    }
+
+    /**
+     * Tüm credentials'ları döndürür
+     */
+    public function getAllCredentials(): array
+    {
+        return $this->credentials;
+    }
+
+    /**
+     * Belirli credentials ile E-Fatura sistemine login olur ve session ID döndürür
+     */
+    public function loginWithCredentials(array $credential): string
+    {
+        if (empty($credential['username']) || empty($credential['password'])) {
             throw new \Exception('E-Fatura authentication failed: missing credentials');
         }
-        $authXml = $this->buildAuthXml();
+        
+        $authXml = $this->buildAuthXml($credential['username'], $credential['password']);
 
         $ch = curl_init($this->wsdlUrl);
         curl_setopt($ch, CURLOPT_POST, true);
@@ -77,12 +88,24 @@ class EFaturaAuthService
     }
 
     /**
+     * İlk credential ile login (backward compatibility)
+     */
+    public function login(): string
+    {
+        if (empty($this->credentials)) {
+            throw new \Exception('E-Fatura authentication failed: no credentials available');
+        }
+        
+        return $this->loginWithCredentials($this->credentials[0]);
+    }
+
+    /**
      * Authentication XML'ini oluşturur
      */
-    private function buildAuthXml(): string
+    private function buildAuthXml(string $username, string $password): string
     {
-        $user = $this->escapeCdata($this->username);
-        $pass = $this->escapeCdata($this->password);
+        $user = $this->escapeCdata($username);
+        $pass = $this->escapeCdata($password);
         return <<<XML
             <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:wsdl="http://schemas.i2i.com/ei/wsdl">
             <soapenv:Header/>

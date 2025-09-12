@@ -96,7 +96,20 @@
                                     <th>Tip</th>
                                     <th>Müşteri</th>
                                     <th>Tutar</th>
-                                    <th>Tarih</th>
+                                    @php
+                                        $currentSort = request('sort', 'issue_date');
+                                        $currentDirection = request('direction', 'desc');
+                                        $newDirection = ($currentSort === 'issue_date' && $currentDirection === 'asc') ? 'desc' : 'asc';
+                                    @endphp
+
+                                    <th>
+                                        <a href="{{ route('invoices.outgoing', array_merge(request()->all(), ['sort' => 'issue_date', 'direction' => $newDirection])) }}">
+                                            Tarih
+                                            @if($currentSort === 'issue_date')
+                                                {!! $currentDirection === 'asc' ? '⬆️' : '⬇️' !!}
+                                            @endif
+                                        </a>
+                                    </th>
                                     <th>E-Doğan</th>
                                     <th>İşlemler</th>
                                 </tr>

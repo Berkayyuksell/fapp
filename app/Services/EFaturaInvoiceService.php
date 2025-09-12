@@ -20,50 +20,171 @@ class EFaturaInvoiceService
     }
 
     /**
-     * Son 3 ay içindeki giden faturaları çeker
+     * Son 3 ay içindeki giden faturaları çeker - tüm credentials için
      */
     public function syncOutgoingInvoices(): array
     {
-        $sessionId = $this->authService->login();
-        $invoices = $this->getInvoices($sessionId, 'OUT');
+        $allResults = [];
+        $credentials = $this->authService->getAllCredentials();
         
-        return $this->saveInvoices($invoices, 'OUT');
+        if (empty($credentials)) {
+            throw new \Exception('No credentials found for E-Fatura authentication');
+        }
+        
+        foreach ($credentials as $index => $credential) {
+            try {
+                \Log::info("Giden faturalar sync başlatıldı", [
+                    'credential_index' => $index + 1,
+                    'username' => $credential['username']
+                ]);
+                
+                $sessionId = $this->authService->loginWithCredentials($credential);
+                $invoices = $this->getInvoices($sessionId, 'OUT');
+                $result = $this->saveInvoices($invoices, 'OUT');
+                
+                $result['credential_username'] = $credential['username'];
+                $result['credential_index'] = $index + 1;
+                $allResults[] = $result;
+                
+                \Log::info("Giden faturalar sync tamamlandı", [
+                    'credential_index' => $index + 1,
+                    'username' => $credential['username'],
+                    'saved' => $result['saved'],
+                    'updated' => $result['updated']
+                ]);
+                
+            } catch (\Exception $e) {
+                \Log::error("Giden faturalar sync hatası", [
+                    'credential_index' => $index + 1,
+                    'username' => $credential['username'],
+                    'error' => $e->getMessage()
+                ]);
+                
+                $allResults[] = [
+                    'total' => 0,
+                    'saved' => 0,
+                    'updated' => 0,
+                    'type' => 'OUT',
+                    'credential_username' => $credential['username'],
+                    'credential_index' => $index + 1,
+                    'error' => $e->getMessage()
+                ];
+            }
+        }
+        
+        return $this->combineResults($allResults, 'OUT');
     }
 
     /**
-     * Son 3 ay içindeki gelen faturaları çeker
+     * Son 3 ay içindeki gelen faturaları çeker - tüm credentials için
      */
     public function syncIncomingInvoices(): array
     {
-        $sessionId = $this->authService->login();
-        $invoices = $this->getInvoices($sessionId, 'IN');
+        $allResults = [];
+        $credentials = $this->authService->getAllCredentials();
         
-        return $this->saveInvoices($invoices, 'IN'); 
+        if (empty($credentials)) {
+            throw new \Exception('No credentials found for E-Fatura authentication');
+        }
+        
+        foreach ($credentials as $index => $credential) {
+            try {
+                \Log::info("Gelen faturalar sync başlatıldı", [
+                    'credential_index' => $index + 1,
+                    'username' => $credential['username']
+                ]);
+                
+                $sessionId = $this->authService->loginWithCredentials($credential);
+                $invoices = $this->getInvoices($sessionId, 'IN');
+                $result = $this->saveInvoices($invoices, 'IN');
+                
+                $result['credential_username'] = $credential['username'];
+                $result['credential_index'] = $index + 1;
+                $allResults[] = $result;
+                
+                \Log::info("Gelen faturalar sync tamamlandı", [
+                    'credential_index' => $index + 1,
+                    'username' => $credential['username'],
+                    'saved' => $result['saved'],
+                    'updated' => $result['updated']
+                ]);
+                
+            } catch (\Exception $e) {
+                \Log::error("Gelen faturalar sync hatası", [
+                    'credential_index' => $index + 1,
+                    'username' => $credential['username'],
+                    'error' => $e->getMessage()
+                ]);
+                
+                $allResults[] = [
+                    'total' => 0,
+                    'saved' => 0,
+                    'updated' => 0,
+                    'type' => 'IN',
+                    'credential_username' => $credential['username'],
+                    'credential_index' => $index + 1,
+                    'error' => $e->getMessage()
+                ];
+            }
+        }
+        
+        return $this->combineResults($allResults, 'IN');
     }
 
     /**
-     * E-Arşiv faturalarını çeker
+     * E-Arşiv faturalarını çeker - tüm credentials için
      */
     public function syncArchiveInvoices(): array
     {
-        try {
-            $sessionId = $this->authService->login();
-            
-            \Log::info('E-Arşiv sync başlatıldı', ['session_id' => substr($sessionId, 0, 10) . '...']);
-            
-            $invoices = $this->getArchiveInvoices($sessionId);
-            
-            \Log::info('E-Arşiv faturaları alındı', ['count' => count($invoices)]);
-            
-            return $this->saveInvoices($invoices, 'ARCHIVE');
-            
-        } catch (\Exception $e) {
-            \Log::error('E-Arşiv sync hatası', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            throw $e;
+        $allResults = [];
+        $credentials = $this->authService->getAllCredentials();
+        
+        if (empty($credentials)) {
+            throw new \Exception('No credentials found for E-Fatura authentication');
         }
+        
+        foreach ($credentials as $index => $credential) {
+            try {
+                \Log::info("E-Arşiv sync başlatıldı", [
+                    'credential_index' => $index + 1,
+                    'username' => $credential['username']
+                ]);
+                
+                $sessionId = $this->authService->loginWithCredentials($credential);
+                $invoices = $this->getArchiveInvoices($sessionId);
+                $result = $this->saveInvoices($invoices, 'ARCHIVE');
+                
+                $result['credential_username'] = $credential['username'];
+                $result['credential_index'] = $index + 1;
+                $allResults[] = $result;
+                
+                \Log::info("E-Arşiv sync tamamlandı", [
+                    'credential_index' => $index + 1,
+                    'username' => $credential['username'],
+                    'saved' => $result['saved'],
+                    'updated' => $result['updated']
+                ]);
+                
+            } catch (\Exception $e) {
+                \Log::error("E-Arşiv sync hatası", [
+                    'credential_index' => $index + 1,
+                    'username' => $credential['username'],
+                    'error' => $e->getMessage()
+                ]);
+                
+                $allResults[] = [
+                    'total' => 0,
+                    'saved' => 0,
+                    'updated' => 0,
+                    'type' => 'ARCHIVE',
+                    'credential_username' => $credential['username'],
+                    'credential_index' => $index + 1,
+                    'error' => $e->getMessage()
+                ];
+            }
+        }
+        
+        return $this->combineResults($allResults, 'ARCHIVE');
     }
 
 
@@ -236,7 +357,7 @@ XML;
     {
             $today = Carbon::now();
 
-            $startDate = $today->copy()->subMonths(1);
+            $startDate = $today->copy()->subMonths(3);
 
 
             $date = [
@@ -460,7 +581,7 @@ private function getLastsOneMonthsDate(string $type): array
 
     $lastDate = $connection->table($table)->max($dateColumn); // En son tarih
     $endDate = $lastDate ? Carbon::parse($lastDate) : Carbon::now();
-    $startDate = $endDate->copy()->subMonths(1); // Son 1 ay
+    $startDate = $endDate->copy()->subMonths(3); // Son 1 ay
 
     return [
         'start' => $startDate->format('Y-m-d'),
@@ -497,7 +618,7 @@ private function getLastOneMonthsDate(string $type): array
     }
 
     if (!$lastDate) {
-        $startDate = $today->copy()->subMonths(1);
+        $startDate = $today->copy()->subMonths(3);
     } else {
         //$startDate = Carbon::parse($lastDate)->subDay(1); 
         //$startDate = $today->copy()->subMonths(1);
@@ -511,5 +632,48 @@ private function getLastOneMonthsDate(string $type): array
         'end'   => $today->format('Y-m-d'),
     ];
 }
+
+    /**
+     * Multiple credential results'ları birleştirir
+     */
+    private function combineResults(array $allResults, string $type): array
+    {
+        $totalSaved = 0;
+        $totalUpdated = 0;
+        $totalCount = 0;
+        $errors = [];
+        $credentials = [];
+
+        foreach ($allResults as $result) {
+            $totalSaved += $result['saved'];
+            $totalUpdated += $result['updated'];
+            $totalCount += $result['total'];
+            
+            $credentials[] = [
+                'username' => $result['credential_username'],
+                'index' => $result['credential_index'],
+                'saved' => $result['saved'],
+                'updated' => $result['updated'],
+                'total' => $result['total']
+            ];
+            
+            if (isset($result['error'])) {
+                $errors[] = [
+                    'username' => $result['credential_username'],
+                    'error' => $result['error']
+                ];
+            }
+        }
+
+        return [
+            'total' => $totalCount,
+            'saved' => $totalSaved,
+            'updated' => $totalUpdated,
+            'type' => $type,
+            'credentials' => $credentials,
+            'errors' => $errors,
+            'credential_count' => count($allResults)
+        ];
+    }
 
 }

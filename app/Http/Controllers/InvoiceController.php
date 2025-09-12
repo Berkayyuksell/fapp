@@ -23,7 +23,7 @@ class InvoiceController extends Controller
 
     public function indexOutgoing(Request $request)
     {
-        $threeMonthsAgo = now()->subMonths(1)->format('Y-m-d');
+        $threeMonthsAgo = now()->subMonths(3)->format('Y-m-d');
     
         // OUT
         $outQuery = DB::connection('sqlsrv')->table('zt_invoices_out')
@@ -102,9 +102,12 @@ class InvoiceController extends Controller
         }
     
         // Sonuç
-        $invoices = $query->orderBy('h.InvoiceDate', 'desc')
-                          ->paginate(20)
-                          ->withQueryString();
+        $sort = request('sort', 'issue_date');     // default tarih
+        $direction = request('direction', 'desc'); // default yeni → eski
+
+        $invoices = $query->orderBy($sort, $direction)
+            ->paginate(20)
+            ->withQueryString();
     
         return view('invoices.outgoing', compact('invoices'));
     }
@@ -118,26 +121,32 @@ class InvoiceController extends Controller
      * Veriler son 3 ayı kapsar.
      */
     public function indexIncoming(Request $request){
-    $threeMonthsAgo = now()->subMonths(1)->format('Y-m-d');
+    $threeMonthsAgo = now()->subMonths(3)->format('Y-m-d');
 
-    $query = DB::connection('sqlsrv')->table('zt_invoices_in as n')
-        ->leftJoin('e_InboxInvoiceLine as e', 'e.UUID', '=', 'n.uuid')
-        ->select([
-            'n.id',
-            DB::raw("'IN' as type"),
-            'n.invoice_id',
-            'n.uuid',
-            'n.supplier',
-            'n.customer',
-            'n.amount',
-            'e.TaxExclusiveAmount',
-            'n.issue_date',
-            DB::raw('CASE WHEN e.UUID IS NULL THEN 0 ELSE 1 END as invoiceIsOkey') 
-        ])
-        ->where('n.issue_date', '>=', $threeMonthsAgo);
+        $query = DB::connection('sqlsrv')->table('zt_invoices_in as n')
+            ->leftJoin('trInvoiceHeader as k', function ($join) {
+                $join->on('k.EInvoiceNumber', '=', 'n.invoice_id')
+                    ->where('k.transTypeCode', 1)
+                    ->where('k.IsReturn', 0)
+                    ->where('k.InvoiceTypeCode', '!=', 0);
+            })
+            ->leftJoin('e_InboxInvoiceHeader as m', function ($join) {
+                $join->on('m.UUID', '=', 'n.uuid');
+                // burada istersen m tablosuna özel filtreler ekleyebilirsin
+                // ör: ->where('m.IsActive', 1);
+            })
+            ->select([
+                'n.*',
+                DB::raw("'IN' as type"),
+                'k.EInvoiceNumber as invoice_id',
+                'k.InvoiceNumber as ref_number',
+                DB::raw('CASE WHEN m.UUID IS NULL THEN 0 ELSE 1 END as invoiceIsOkey')
+            ])
+            ->where('n.issue_date', '>=', $threeMonthsAgo);
 
-    // Filtreleme
-    if ($request->filled('start_date')) {
+
+
+        if ($request->filled('start_date')) {
         $query->whereDate('n.issue_date', '>=', Carbon::parse($request->start_date)->format('Y-m-d'));
     }
 
@@ -145,20 +154,28 @@ class InvoiceController extends Controller
         $query->whereDate('n.issue_date', '<=', Carbon::parse($request->end_date)->format('Y-m-d'));
     }
     if ($request->filled('missing') && $request->missing == 1) {
-        $query->whereNull('e.UUID'); // Sadece Nebim'e düşmeyen faturaları göster
+        $query->whereNull('m.UUID'); // Sadece Nebim'e düşmeyen faturaları göster
     }
+        if ($request->filled('unprocessed') && $request->unprocessed == 1) {
+            $query->whereNull('k.EInvoiceNumber'); }
 
     if ($request->filled('search')) {
         $search = trim($request->search);
         $query->where(function($q) use ($search) {
             $q->where('n.supplier', 'like', "%{$search}%")
-              ->orWhere('n.invoice_id', 'like', "%{$search}%");
+              ->orWhere('n.invoice_id', 'like', "%{$search}%")
+                ->orWhere('k.InvoiceNumber', 'like', "%{$search}%");
+
         });
     }
 
-    $invoices = $query->orderBy('n.issue_date', 'desc')
-                      ->paginate(20)
-                      ->withQueryString();
+
+        $sort = request('sort', 'n.issue_date');     // default: tarih
+        $direction = request('direction', 'desc');   // default: yeni → eski
+
+        $invoices = $query->orderBy($sort, $direction)
+            ->paginate(20)
+            ->withQueryString();
 
     return view('invoices.incoming', compact('invoices'));
 }
@@ -167,11 +184,11 @@ class InvoiceController extends Controller
 
     public function sync()
     {
-        
-
         try {
             $results = [];
 
+            Log::info('Starting multi-account sync process');
+            
             Log::info('Starting outgoing invoices sync');
             $results['outgoing'] = $this->invoiceService->syncOutgoingInvoices();
             Log::info('Outgoing invoices result: ', $results['outgoing']);
@@ -183,20 +200,59 @@ class InvoiceController extends Controller
             Log::info('Starting incoming invoices sync');
             $results['incoming'] = $this->invoiceService->syncIncomingInvoices();
             Log::info('Incoming invoices result: ', $results['incoming']);
-            
-           
 
+            // Toplam istatistikleri hesapla
             $totalSaved = $results['outgoing']['saved'] + $results['incoming']['saved'] + $results['archive']['saved'];
             $totalUpdated = $results['outgoing']['updated'] + $results['incoming']['updated'] + $results['archive']['updated'];
+            $totalCredentials = $results['outgoing']['credential_count'] ?? 0;
 
+            // Hataları topla
+            $allErrors = [];
+            foreach ($results as $type => $result) {
+                if (!empty($result['errors'])) {
+                    $allErrors[$type] = $result['errors'];
+                }
+            }
 
+            // Detaylı mesaj oluştur
+            $message = "Senkronizasyon tamamlandı! ";
+            $message .= "Toplam {$totalSaved} yeni fatura kaydedildi, {$totalUpdated} fatura güncellendi. ";
+            $message .= "({$totalCredentials} hesap işlendi)";
+
+            // Detayları ekle
+            $details = [];
+            foreach ($results as $type => $result) {
+                $typeName = match($type) {
+                    'outgoing' => 'Giden',
+                    'incoming' => 'Gelen', 
+                    'archive' => 'E-Arşiv',
+                    default => $type
+                };
+                $details[] = "{$typeName}: {$result['saved']} yeni, {$result['updated']} güncellendi";
+            }
             
-            // Yönlendirmeyi giden faturalar sayfasına yapabiliriz
+            if (!empty($details)) {
+                $message .= " | " . implode(" | ", $details);
+            }
+
+            // Hatalar varsa uyarı olarak ekle
+            if (!empty($allErrors)) {
+                $errorCount = array_sum(array_map('count', $allErrors));
+                $message .= " (⚠️ {$errorCount} hesapta hata oluştu)";
+            }
+            
+            Log::info('Multi-account sync completed', [
+                'total_saved' => $totalSaved,
+                'total_updated' => $totalUpdated,
+                'credential_count' => $totalCredentials,
+                'errors' => $allErrors
+            ]);
+            
             return redirect()->route('invoices.outgoing')
-                             ->with('success', "Senkronizasyon tamamlandı! Toplam {$totalSaved} yeni fatura kaydedildi, {$totalUpdated} fatura güncellendi.");
+                             ->with('success', $message);
 
         } catch (\Exception $e) {
-            Log::error('Sync error: ' . $e->getMessage());
+            Log::error('Multi-account sync error: ' . $e->getMessage());
             return redirect()->back()
                              ->with('error', 'Senkronizasyon hatası: ' . $e->getMessage());
         }
