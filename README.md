@@ -67,8 +67,9 @@ https://gist.github.com/amestsantim/d79cc93fe98d164d13a11eda473a7a9a
 
 
 
-DOSYALARA İZİN VER
+## DOSYALARA İZİN VER
 
+```powershell
 icacls "C:\inetpub\wwwroot\fapp\storage" /grant "IIS_IUSRS:(OI)(CI)F" /T
 icacls "C:\inetpub\wwwroot\fapp\bootstrap\cache" /grant "IIS_IUSRS:(OI)(CI)F" /T
 
