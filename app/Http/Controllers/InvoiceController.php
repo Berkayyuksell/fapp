@@ -59,6 +59,9 @@ class InvoiceController extends Controller
             ->leftJoinSub($unionQuery, 'z', function ($join) {
                 $join->on('h.InvoiceHeaderID', '=', 'z.uuid');
             })
+            ->leftjoin('AllInvoices as i', function ($join) {
+                $join->on('h.InvoiceHeaderID', '=', 'i.InvoiceHeaderID');
+            })
             ->select([
                 'h.InvoiceHeaderID',
                 //'z.invoice_id',
@@ -66,9 +69,11 @@ class InvoiceController extends Controller
                 'h.InvoiceHeaderID as uuid',
                 'z.supplier',
                 'z.customer',
-                'z.amount',
+                //'z.amount',
                 'h.InvoiceNumber',
                 //'z.issue_date',
+                'h.InvoiceTypeCode',
+                DB::raw('SUM(i.Doc_NetAmount) as amount'),
                 'h.InvoiceDate as issue_date',
                 'z.type',
                 DB::raw("CASE WHEN z.uuid IS NOT NULL THEN 1 ELSE 0 END as invoiceIsOkey")
@@ -76,13 +81,28 @@ class InvoiceController extends Controller
             ->where('h.InvoiceDate', '>=', $threeMonthsAgo)
             ->where('h.TransTypeCode', 2)
             ->where('h.IsReturn', 0)
-            ->where('h.InvoiceTypeCode' ,'!=' ,0);
+            ->where('h.InvoiceTypeCode' ,'!=' ,0)
+            ->groupBy([
+                'h.InvoiceHeaderID',
+                'h.EInvoiceNumber',
+                'h.InvoiceHeaderID',
+                'z.supplier',
+                'z.customer',
+                'h.InvoiceNumber',
+                'h.InvoiceDate',
+                'z.type',
+                'z.uuid',
+                'h.InvoiceTypeCode'
+            ]);
+
              
     
         // Filtreler
         if ($request->filled('type')) {
-            $query->where('z.type', $request->type);
+            $query->where('h.InvoiceTypeCode', $request->type);
         }
+
+
         if ($request->filled('start_date')) {
             $query->whereDate('h.InvoiceDate', '>=', Carbon::parse($request->start_date)->format('Y-m-d'));
         }

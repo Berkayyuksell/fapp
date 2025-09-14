@@ -25,8 +25,8 @@
                 <label class="form-label">Fatura Tipi</label>
                 <select name="type" class="form-select" onchange="document.getElementById('filterForm').submit();">
                     <option value="">Tümü</option>
-                    <option value="OUT" {{ request('type') == 'OUT' ? 'selected' : '' }}>Giden E-Fatura</option>
-                    <option value="ARCHIVE" {{ request('type') == 'ARCHIVE' ? 'selected' : '' }}>E-Arşiv</option>
+                    <option value="1" {{ request('type') == '1' ? 'selected' : '' }}>Giden E-Fatura</option>
+                    <option value="2" {{ request('type') == '2' ? 'selected' : '' }}>E-Arşiv</option>
                 </select>
             </div>
 
@@ -119,19 +119,24 @@
                                     <tr>
                                         <td><small class="text-muted">{{ $invoice->invoice_id }}</small></td>
                                         <td><small class="text-muted">{{ $invoice->InvoiceNumber }}</small></td>
+
                                         <td>
-                                            @if($invoice->type == 'OUT')
+                                            @if($invoice->InvoiceTypeCode == 1)
                                                 <span class="badge bg-primary">E-Fatura</span>
-                                            @elseif($invoice->type == 'ARCHIVE')
+                                            @elseif($invoice->InvoiceTypeCode == 2)
                                                 <span class="badge bg-warning text-dark">E-Arşiv</span>
-                                            @elseif(!$invoice->type)
-                                            <span class="badge rounded-pill bg-danger">düşmeyen</span>
                                             @endif
+
                                         </td>
                                         <td>
+                                            @if($invoice->customer != null)
                                             <div class="text-truncate" style="max-width:250px;" title="{{ $invoice->customer }}">
                                                 {{ $invoice->customer }}
                                             </div>
+                                            @else
+                                                <span class="badge rounded-pill bg-danger">düşmeyen</span>
+
+                                            @endif
                                         </td>
                                         <td><strong class="text-success">{{ number_format($invoice->amount,2) }} ₺</strong></td>
                                         <td>{{ date('d.m.Y', strtotime($invoice->issue_date)) }}</td>
